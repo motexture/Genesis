@@ -361,9 +361,10 @@ class Axon(nn.Module):
         self.attentive_neuron = attentive_neuron
         self.heads = heads
 
-        self.to_q = nn.Linear(self.n_dim, self.n_dim, bias=False)
-        self.to_k = nn.Linear(self.n_dim, self.n_dim, bias=False)
-        self.to_v = nn.Linear(self.n_dim, self.n_dim, bias=False)
+        if self.attentive_neuron:
+            self.to_q = nn.Linear(self.n_dim, self.n_dim, bias=False)
+            self.to_k = nn.Linear(self.n_dim, self.n_dim, bias=False)
+            self.to_v = nn.Linear(self.n_dim, self.n_dim, bias=False)
 
         self.fc_out = nn.Linear(self.n_dim, self.n_dim, bias=False)
         self.ln = nn.LayerNorm(self.n_dim, bias=False)
@@ -436,7 +437,7 @@ class Neuron(nn.Module):
             Dendritic(self.n_dim) for _ in range(self.n_dendritics)
         ])
         self.soma = Soma(self.n_dim)
-        self.axon = Axon(self.n_dim, self.attentive_neuron, self.attentive_neuron)
+        self.axon = Axon(self.n_dim, self.attentive_neuron, self.n_attentive_neuron_heads)
         self.synapses = nn.ModuleList([
             Synapse(self.n_dim) for _ in range(self.n_synapses)
         ])
