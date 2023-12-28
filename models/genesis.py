@@ -374,25 +374,21 @@ class Axon(nn.Module):
     def forward(self, x, attention_mask=None, y=None):
         if self.attentive_neuron:
             y = x if y is None else y
-            bx = x.shape[0]
-            sx = x.shape[1]
-            cx = x.shape[2]
-
-            by = y.shape[0]
-            sy = y.shape[1]
-            cy = y.shape[2]
+            
+            x_shape = x.shape
+            y_shape = y.shape
 
             q = self.to_q(x)
             k = self.to_k(y)
             v = self.to_v(y)
 
-            q = q.reshape(bx, sx, self.heads, cx // self.heads).transpose(1, 2)
-            k = k.reshape(by, sy, self.heads, cy // self.heads).transpose(1, 2)
-            v = v.reshape(by, sy, self.heads, cy // self.heads).transpose(1, 2)
+            q = q.reshape(x_shape[0], x_shape[1], self.heads, x_shape[2] // self.heads).transpose(1, 2)
+            k = k.reshape(y_shape[0], y_shape[1], self.heads, y_shape[2] // self.heads).transpose(1, 2)
+            v = v.reshape(y_shape[0], y_shape[1], self.heads, y_shape[2] // self.heads).transpose(1, 2)
 
             is_causal = True if attention_mask is not None else False
             x = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask, is_causal=is_causal)
-            x = x.transpose(1, 2).contiguous().view(bx, sx, cx)
+            x = x.transpose(1, 2).contiguous().view(x_shape[0], x_shape[1], x_shape[2])
 
         x = self.fc_out(x)
         x = self.ln(x)
