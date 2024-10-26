@@ -70,8 +70,10 @@ class Genesis(nn.Module):
         else:
             hidden_states = inputs
 
+
         if self.config.n_section == "split":
             splitted = []
+
             for i in range(len(self.sections)):
                 a_split = self.a_splits[i](hidden_states)
                 if y is not None and self.config.n_cross_attention:
@@ -355,36 +357,36 @@ class Soma(nn.Module):
         return x, torch.mean(x, dim=0)
 
 class Axon(nn.Module):
-    def __init__(self, n_dim, attentive_neuron=False, heads=8):
+    def __init__(self, n_dim, attentive_neuron, n_attentive_neuron_heads, n_dendritics, n_synapses, n_pos_size, n_neighbors):
         super(Axon, self).__init__()
         self.n_dim = n_dim
         self.attentive_neuron = attentive_neuron
-        self.heads = heads
+        self.n_attentive_neuron_heads = n_attentive_neuron_heads
 
         if self.attentive_neuron:
-            self.to_q = nn.Linear(self.n_dim, self.n_dim, bias=False)
-            self.to_k = nn.Linear(self.n_dim, self.n_dim, bias=False)
-            self.to_v = nn.Linear(self.n_dim, self.n_dim, bias=False)
+            self.to_q = Neuron(self.n_dim, False, n_attentive_neuron_heads, n_dendritics, n_synapses, n_pos_size, n_neighbors)
+            self.to_k = Neuron(self.n_dim, False, n_attentive_neuron_heads, n_dendritics, n_synapses, n_pos_size, n_neighbors)
+            self.to_v = Neuron(self.n_dim, False, n_attentive_neuron_heads, n_dendritics, n_synapses, n_pos_size, n_neighbors)
 
         self.fc_out = nn.Linear(self.n_dim, self.n_dim, bias=False)
         self.ln = nn.LayerNorm(self.n_dim, bias=False)
         self.act = nn.SiLU()
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x, attention_mask=None, y=None):
+    def forward(self, x, increment_neuron_count_func, attention_mask=None, y=None):
         if self.attentive_neuron:
             y = x if y is None else y
             
             x_shape = x.shape
             y_shape = y.shape
 
-            q = self.to_q(x)
-            k = self.to_k(y)
-            v = self.to_v(y)
+            q = self.to_q(x, increment_neuron_count_func)
+            k = self.to_k(y, increment_neuron_count_func)
+            v = self.to_v(y, increment_neuron_count_func)
 
-            q = q.reshape(x_shape[0], x_shape[1], self.heads, x_shape[2] // self.heads).transpose(1, 2)
-            k = k.reshape(y_shape[0], y_shape[1], self.heads, y_shape[2] // self.heads).transpose(1, 2)
-            v = v.reshape(y_shape[0], y_shape[1], self.heads, y_shape[2] // self.heads).transpose(1, 2)
+            q = q.reshape(x_shape[0], x_shape[1], self.n_attentive_neuron_heads, x_shape[2] // self.n_attentive_neuron_heads).transpose(1, 2)
+            k = k.reshape(y_shape[0], y_shape[1], self.n_attentive_neuron_heads, y_shape[2] // self.n_attentive_neuron_heads).transpose(1, 2)
+            v = v.reshape(y_shape[0], y_shape[1], self.n_attentive_neuron_heads, y_shape[2] // self.n_attentive_neuron_heads).transpose(1, 2)
 
             is_causal = True if attention_mask is not None else False
             x = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask, is_causal=is_causal)
@@ -427,13 +429,13 @@ class Neuron(nn.Module):
         self.n_neighbors = n_neighbors
 
         self.n_threshold = nn.Parameter(torch.tensor(0.5))
-        self.activated = False 
+        self.activated = False
 
         self.dendritics = nn.ModuleList([
             Dendritic(self.n_dim) for _ in range(self.n_dendritics)
         ])
         self.soma = Soma(self.n_dim)
-        self.axon = Axon(self.n_dim, self.attentive_neuron, self.n_attentive_neuron_heads)
+        self.axon = Axon(self.n_dim, self.attentive_neuron, self.n_attentive_neuron_heads, n_dendritics, n_synapses, n_pos_size, n_neighbors)
         self.synapses = nn.ModuleList([
             Synapse(self.n_dim) for _ in range(self.n_synapses)
         ])
@@ -457,9 +459,9 @@ class Neuron(nn.Module):
 
         return self.soma(hidden_states)
     
-    def process(self, x, attention_mask=None, y=None):
+    def process(self, x, increment_neuron_count_func, attention_mask=None, y=None):
         residual = x
-        x = self.axon(x, attention_mask, y)
+        x = self.axon(x, increment_neuron_count_func, attention_mask, y)
         x = x + residual
 
         return x
@@ -501,7 +503,7 @@ class Neuron(nn.Module):
         self.activated = True
         increment_neuron_count_func()
 
-        x = self.process(x, attention_mask, y)
+        x = self.process(x, increment_neuron_count_func, attention_mask, y)
         x = self.propagate(x)
         x = self.connect(x, increment_neuron_count_func)
 
