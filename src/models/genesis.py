@@ -368,9 +368,14 @@ class Axon(nn.Module):
             self.to_k = Neuron(self.n_dim, False, n_attentive_neuron_heads, n_dendritics, n_synapses, n_pos_size, n_neighbors)
             self.to_v = Neuron(self.n_dim, False, n_attentive_neuron_heads, n_dendritics, n_synapses, n_pos_size, n_neighbors)
 
-        self.fc_out = nn.Linear(self.n_dim, self.n_dim, bias=False)
+        # Feed-forward layer
+        self.feed_forward = nn.Sequential(
+            nn.Linear(self.n_dim, self.n_dim * 4, bias=False),
+            nn.ReLU(),
+            nn.Linear(self.n_dim * 4, self.n_dim, bias=False)
+        )
+
         self.ln = nn.LayerNorm(self.n_dim, bias=False)
-        self.act = nn.SiLU()
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, x, increment_neuron_count_func, attention_mask=None, y=None):
@@ -392,10 +397,9 @@ class Axon(nn.Module):
             x = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask, is_causal=is_causal)
             x = x.transpose(1, 2).contiguous().view(x_shape[0], x_shape[1], x_shape[2])
 
-        x = self.fc_out(x)
+        ff_output = self.feed_forward(x)
+        x = x + self.dropout(ff_output)
         x = self.ln(x)
-        x = self.act(x)
-        x = self.dropout(x)
 
         return x
     
