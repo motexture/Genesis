@@ -70,7 +70,6 @@ class Genesis(nn.Module):
         else:
             hidden_states = inputs
 
-
         if self.config.n_section == "split":
             splitted = []
 
